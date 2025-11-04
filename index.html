@@ -7,8 +7,12 @@
   <link rel="manifest" href="manifest.json">
   <link rel="icon" href="icon.png" type="image/png">
   <meta name="theme-color" content="#6c5ce7">
+  <!-- Leaflet -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <!-- Routing -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
+  <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.min.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@500;600;700&display=swap" rel="stylesheet">
   <style>
     :root {
@@ -24,7 +28,7 @@
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
       font-family: 'Poppins', sans-serif;
-      background: var(--bg);
+      background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
       color: var(--text);
       min-height: 100vh;
       padding-bottom: 100px;
@@ -70,6 +74,7 @@
       color: white;
       font-size: 15px;
     }
+    .search-box input::placeholder { color: rgba(255,255,255,0.6); }
     .search-box button {
       padding: 14px 20px;
       background: var(--secondary);
@@ -93,6 +98,10 @@
       border: none;
       border-radius: 18px;
       cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
     }
     .btn-add { background: #51cf66; color: white; }
     .btn-route { background: #ffd43b; color: #333; }
@@ -128,7 +137,27 @@
 
     .hidden { display: none; }
 
-    /* MODAL */
+    /* SAVED LIST */
+    .saved-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 14px;
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+      font-size: 15px;
+    }
+    .saved-item button {
+      background: #ff6b6b;
+      color: white;
+      border: none;
+      border-radius: 12px;
+      width: 32px;
+      height: 32px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+
+    /* ABOUT MODAL */
     .modal {
       position: fixed;
       top: 0; left: 0; right: 0; bottom: 0;
@@ -151,7 +180,7 @@
       text-align: center;
     }
     .modal h3 { font-size: 24px; margin-bottom: 16px; }
-    .modal p { font-size: 15px; opacity: 0.9; margin-bottom: 12px; }
+    .modal p { font-size: 15px; opacity: 0.9; margin-bottom: 12px; line-height: 1.6; }
     .close-btn {
       background: linear-gradient(to right, #ff6b6b, #ee5a52);
       color: white;
@@ -205,16 +234,17 @@
   <div class="bottom-nav">
     <div class="nav-item active" onclick="switchTab('home')">Home</div>
     <div class="nav-item" onclick="switchTab('saved')">Saved</div>
-    <div class="nav-item" onclick="openSettings()">Settings</div>
+    <div class="nav-item" onclick="openAbout()">About</div>
   </div>
 
-  <!-- SETTINGS MODAL -->
-  <div id="settings-modal" class="modal hidden">
+  <!-- ABOUT MODAL -->
+  <div id="about-modal" class="modal hidden">
     <div class="modal-content">
-      <h3>Pengaturan</h3>
-      <p>Aplikasi ini 100% gratis & offline.</p>
+      <h3>Tentang RifqyMaps</h3>
+      <p>Aplikasi peta offline & gratis.</p>
       <p>Dibuat oleh <strong>Rifqy</strong> © 2025</p>
-      <button class="close-btn" onclick="closeSettings()">Tutup</button>
+      <p>Fitur: Cari, Marker, Rute, GPS</p>
+      <button class="close-btn" onclick="closeAbout()">Tutup</button>
     </div>
   </div>
 
@@ -260,15 +290,28 @@
       list.innerHTML = '';
       markers.forEach((m, i) => {
         const div = document.createElement('div');
-        div.style.padding = '12px';
-        div.style.borderBottom = '1px solid rgba(255,255,255,0.1)';
-        div.innerHTML = `<strong>${m.label}</strong><br><small>${m.lat.toFixed(4)}, ${m.lng.toFixed(4)}</small>`;
-        div.onclick = () => {
+        div.className = 'saved-item';
+        div.innerHTML = `
+          <div>
+            <strong>${m.label}</strong><br>
+            <small>${m.lat.toFixed(4)}, ${m.lng.toFixed(4)}</small>
+          </div>
+          <button onclick="deleteMarker(${i})">×</button>
+        `;
+        div.querySelector('div').onclick = () => {
           map.setView([m.lat, m.lng], 15);
           switchTab('home');
         };
         list.appendChild(div);
       });
+    }
+
+    function deleteMarker(index) {
+      if (confirm('Hapus marker ini?')) {
+        markers.splice(index, 1);
+        localStorage.setItem('rifqyMarkers', JSON.stringify(markers));
+        location.reload(); // Refresh map
+      }
     }
 
     function searchLocation() {
@@ -295,9 +338,11 @@
       routingControl = L.Routing.control({
         waypoints: [],
         routeWhileDragging: true,
-        createMarker: () => null,
-        addWaypoints: true
+        addWaypoints: true,
+        createMarker: function() { return null; },
+        lineOptions: { styles: [{ color: '#6c5ce7', weight: 6 }] }
       }).addTo(map);
+      alert('Klik 2 titik di peta untuk buat rute!');
     }
 
     function getCurrentLocation() {
@@ -306,9 +351,10 @@
           const { latitude, longitude } = pos.coords;
           map.setView([latitude, longitude], 16);
           if (userMarker) map.removeLayer(userMarker);
-          userMarker = L.marker([latitude, longitude]).addTo(map)
-            .bindPopup('Kamu di sini!').openPopup();
-        });
+          userMarker = L.marker([latitude, longitude], {
+            icon: L.divIcon({ className: 'gps-icon', html: '📍', iconSize: [30, 30] })
+          }).addTo(map).bindPopup('Kamu di sini!').openPopup();
+        }, () => alert('GPS gagal.'));
       } else {
         alert('GPS tidak didukung.');
       }
@@ -319,23 +365,23 @@
       document.getElementById(`tab-${tab}`).classList.remove('hidden');
       document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
       document.querySelectorAll('.nav-item').forEach(n => {
-        if (n.textContent.trim() === (tab === 'home' ? 'Home' : tab === 'saved' ? 'Saved' : 'Settings')) {
+        if (n.textContent.trim() === (tab === 'home' ? 'Home' : tab === 'saved' ? 'Saved' : 'About')) {
           n.classList.add('active');
         }
       });
       if (tab === 'saved') updateSavedList();
     }
 
-    function openSettings() {
-      document.getElementById('settings-modal').classList.remove('hidden');
+    function openAbout() {
+      document.getElementById('about-modal').classList.remove('hidden');
     }
 
-    function closeSettings() {
-      document.getElementById('settings-modal').classList.add('hidden');
+    function closeAbout() {
+      document.getElementById('about-modal').classList.add('hidden');
     }
 
     // INIT
     window.onload = initMap;
   </script>
 </body>
-</html>
+      </html>
